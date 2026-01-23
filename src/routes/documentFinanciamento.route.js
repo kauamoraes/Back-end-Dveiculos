@@ -4,92 +4,13 @@ import { Router } from "express";
 import PizZip from "pizzip";
 import Docxtemplater from "docxtemplater";
 import prisma from "../prisma/client.js";
-import PQueue from "p-queue";
-import { execFile } from "child_process";
 
 const router = Router();
-const libreQueue = new PQueue({ concurrency: 1 });
-
-const SOFFICE_PATH =
-  process.env.SOFFICE_PATH ||
-  "C:\\Program Files\\LibreOffice\\program\\soffice.exe";
 
 /* ===============================
-   CONVERSÃO DOCX → PDF
+   FINANCIAMENTO WORD (DOCX)
 ================================ */
-function convertToPdf(buffer) {
-  return Promise.race([
-    libreQueue.add(
-      () =>
-        new Promise((resolve, reject) => {
-          const timestamp = Date.now();
-          const tempDir = path.join(process.cwd(), "temp");
-          const docxPath = path.join(tempDir, `consignacao_${timestamp}.docx`);
-          const pdfPath = path.join(tempDir, `consignacao_${timestamp}.pdf`);
-
-          try {
-            if (!fs.existsSync(tempDir)) {
-              fs.mkdirSync(tempDir, { recursive: true });
-            }
-
-            fs.writeFileSync(docxPath, buffer);
-
-            execFile(
-              SOFFICE_PATH,
-              [
-                "--headless",
-                "--convert-to",
-                "pdf",
-                "--outdir",
-                tempDir,
-                docxPath,
-              ],
-              { timeout: 30000 },
-              (err) => {
-                if (err) {
-                  cleanup();
-                  return reject(err);
-                }
-
-                setTimeout(() => {
-                  try {
-                    if (!fs.existsSync(pdfPath)) {
-                      throw new Error("PDF não gerado");
-                    }
-
-                    const pdfBuffer = fs.readFileSync(pdfPath);
-                    cleanup();
-                    resolve(pdfBuffer);
-                  } catch (e) {
-                    cleanup();
-                    reject(e);
-                  }
-                }, 500);
-              },
-            );
-          } catch (e) {
-            cleanup();
-            reject(e);
-          }
-
-          function cleanup() {
-            try {
-              if (fs.existsSync(docxPath)) fs.unlinkSync(docxPath);
-              if (fs.existsSync(pdfPath)) fs.unlinkSync(pdfPath);
-            } catch {}
-          }
-        }),
-    ),
-    new Promise((_, reject) =>
-      setTimeout(() => reject(new Error("Timeout ao converter PDF")), 35000),
-    ),
-  ]);
-}
-
-/* ===============================
-   CONSIGNAÇÃO PDF
-================================ */
-router.get("/vehicle/:id/financiamento-pdf", async (req, res) => {
+router.get("/vehicle/:id/financiamento-docx", async (req, res) => {
   try {
     const vehicleId = Number(req.params.id);
 
@@ -118,9 +39,9 @@ router.get("/vehicle/:id/financiamento-pdf", async (req, res) => {
     const sale = vehicle.sale;
     const client = sale.client;
 
-    if (sale.client.tipo.trim().toUpperCase() !== "FINANCIOU - TERCEIRO") {
+    if (client.tipo?.trim().toUpperCase() !== "FINANCIOU - TERCEIRO") {
       return res.status(403).json({
-        error: "Cliente não é Financiado",
+        error: "Cliente não é financiamento",
       });
     }
 
@@ -128,12 +49,13 @@ router.get("/vehicle/:id/financiamento-pdf", async (req, res) => {
 
     const templatePath = path.join(
       process.cwd(),
-      "src/templates/Financiamento.docx",
+      "src/templates/Financiamento.docx"
     );
 
     if (!fs.existsSync(templatePath)) {
       return res.status(500).json({
         error: "Template não encontrado",
+        path: templatePath,
       });
     }
 
@@ -172,30 +94,44 @@ router.get("/vehicle/:id/financiamento-pdf", async (req, res) => {
       chassi: soldVehicle.chassi ?? "",
       cor: soldVehicle.cor ?? "",
       renavan: soldVehicle.renavan ?? "",
-      valorCompra: sale.valorVenda?.toFixed(2) ?? "",
       km: soldVehicle.km?.toString() ?? "",
-      obs: sale.obs?.toString() ?? "",
+
       banco: sale.banco ?? "",
+      valorCompra: sale.valorVenda?.toFixed(2) ?? "",
       quantidadeParcelas: sale.quantidadeParcelas?.toString() ?? "",
       valorParcela: sale.valorParcela?.toFixed(2) ?? "",
+      obs: sale.obs?.toString() ?? "",
     });
 
-    doc.render();
+    try {
+      doc.render();
+    } catch (e) {
+      console.error("❌ Erro ao renderizar financiamento:", e);
+      return res.status(500).json({
+        error: "Erro ao processar template",
+        details: e.properties || e.message,
+      });
+    }
 
-    const docxBuffer = doc.getZip().generate({ type: "nodebuffer" });
-    const pdfBuffer = await convertToPdf(docxBuffer);
+    const docxBuffer = doc.getZip().generate({
+      type: "nodebuffer",
+    });
 
-    res.setHeader("Content-Type", "application/pdf");
-    res.setHeader(
-      "Content-Disposition",
-      `attachment; filename="consignacao-veiculo-${vehicle.id}.pdf"`,
+     res.setHeader(
+      "Content-Type",
+      "application/vnd.openxmlformats-officedocument.wordprocessingml.document; charset=utf-8",
     );
 
-    res.send(pdfBuffer);
+    res.setHeader(
+      "Content-Disposition",
+      `attachment; filename="financiamento-veiculo-${vehicle.id}.docx"`
+    );
+
+    res.send(docxBuffer);
   } catch (err) {
-    console.error(err);
+    console.error("💥 ERRO GERAL:", err);
     res.status(500).json({
-      error: "Erro ao gerar contrato de consignação",
+      error: "Erro ao gerar contrato de financiamento",
       message: err.message,
     });
   }

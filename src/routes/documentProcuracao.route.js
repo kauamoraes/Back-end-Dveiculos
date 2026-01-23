@@ -4,92 +4,13 @@ import { Router } from "express";
 import PizZip from "pizzip";
 import Docxtemplater from "docxtemplater";
 import prisma from "../prisma/client.js";
-import PQueue from "p-queue";
-import { execFile } from "child_process";
-import { error } from "console";
 
 const router = Router();
-const libreQueue = new PQueue({ concurrency: 1 });
-
-const SOFFICE_PATH = "C:\\Program Files\\LibreOffice\\program\\soffice.exe";
 
 /* ===============================
-   CONVERSÃO DOCX → PDF
+   PROCURAÇÃO WORD (DOCX)
 ================================ */
-/**
- * @param {Buffer} buffer
- * @returns {Promise<Buffer>}
- */
-function convertToPdf(buffer) {
-  return Promise.race([
-    libreQueue.add(
-      () =>
-        new Promise((resolve, reject) => {
-          const timestamp = Date.now();
-          const tempDir = path.join(process.cwd(), "temp");
-          const docxPath = path.join(tempDir, `cliente_${timestamp}.docx`);
-          const pdfPath = path.join(tempDir, `cliente_${timestamp}.pdf`);
-
-          try {
-            if (!fs.existsSync(tempDir)) {
-              fs.mkdirSync(tempDir, { recursive: true });
-            }
-
-            fs.writeFileSync(docxPath, buffer);
-
-            execFile(
-              SOFFICE_PATH,
-              [
-                "--headless",
-                "--convert-to",
-                "pdf",
-                "--outdir",
-                tempDir,
-                docxPath,
-              ],
-              { timeout: 30000 },
-              (err) => {
-                if (err) {
-                  cleanup();
-                  return reject(err);
-                }
-
-                setTimeout(() => {
-                  try {
-                    if (!fs.existsSync(pdfPath)) {
-                      throw new Error("PDF não gerado");
-                    }
-
-                    const pdfBuffer = fs.readFileSync(pdfPath);
-                    cleanup();
-                    resolve(pdfBuffer);
-                  } catch (e) {
-                    cleanup();
-                    reject(e);
-                  }
-                }, 500);
-              },
-            );
-          } catch (e) {
-            cleanup();
-            reject(e);
-          }
-
-          function cleanup() {
-            try {
-              if (fs.existsSync(docxPath)) fs.unlinkSync(docxPath);
-              if (fs.existsSync(pdfPath)) fs.unlinkSync(pdfPath);
-            } catch {}
-          }
-        }),
-    ),
-    new Promise((_, reject) =>
-      setTimeout(() => reject(new Error("Timeout ao converter PDF")), 35000),
-    ),
-  ]);
-}
-
-router.get("/client/:id/procuracao-pdf", async (req, res) => {
+router.get("/client/:id/procuracao-docx", async (req, res) => {
   try {
     const clientId = Number(req.params.id);
 
@@ -108,7 +29,6 @@ router.get("/client/:id/procuracao-pdf", async (req, res) => {
       },
     });
 
-
     if (!client) {
       return res.status(404).json({ error: "Cliente não encontrado" });
     }
@@ -119,9 +39,11 @@ router.get("/client/:id/procuracao-pdf", async (req, res) => {
       });
     }
 
-
+    // Pega a venda mais recente
     const sale = client.sales.sort(
-      (a, b) => new Date(b.dataVenda).getTime() - new Date(a.dataVenda).getTime()
+      (a, b) =>
+        new Date(b.dataVenda).getTime() -
+        new Date(a.dataVenda).getTime()
     )[0];
 
     if (!sale.vehicle) {
@@ -140,6 +62,7 @@ router.get("/client/:id/procuracao-pdf", async (req, res) => {
     if (!fs.existsSync(templatePath)) {
       return res.status(500).json({
         error: "Template não encontrado",
+        path: templatePath,
       });
     }
 
@@ -152,7 +75,8 @@ router.get("/client/:id/procuracao-pdf", async (req, res) => {
       delimiters: { start: "<<", end: ">>" },
     });
 
-    // 📄 Dados corretos (cliente + veículo da venda)
+    const now = new Date();
+
     const templateData = {
       nome: client.nome ?? "",
       cpf: client.cpf ?? "",
@@ -164,8 +88,8 @@ router.get("/client/:id/procuracao-pdf", async (req, res) => {
       cep: client.cep ?? "",
       celular: client.celular ?? "",
 
-      data: new Date().toLocaleDateString("pt-BR"),
-      hora: new Date().toLocaleTimeString("pt-BR", {
+      data: now.toLocaleDateString("pt-BR"),
+      hora: now.toLocaleTimeString("pt-BR", {
         hour: "2-digit",
         minute: "2-digit",
       }),
@@ -180,20 +104,34 @@ router.get("/client/:id/procuracao-pdf", async (req, res) => {
     };
 
     doc.setData(templateData);
-    doc.render();
 
-    const docxBuffer = doc.getZip().generate({ type: "nodebuffer" });
-    const pdfBuffer = await convertToPdf(docxBuffer);
+    try {
+      doc.render();
+    } catch (e) {
+      console.error("❌ Erro ao renderizar procuração:", e);
+      return res.status(500).json({
+        error: "Erro ao processar template",
+        details: e.properties || e.message,
+      });
+    }
 
-    res.setHeader("Content-Type", "application/pdf");
-    res.setHeader(
-      "Content-Disposition",
-      `attachment; filename="procuracao-cliente-${client.id}.pdf"`
+    const docxBuffer = doc.getZip().generate({
+      type: "nodebuffer",
+    });
+
+     res.setHeader(
+      "Content-Type",
+      "application/vnd.openxmlformats-officedocument.wordprocessingml.document; charset=utf-8",
     );
 
-    res.send(pdfBuffer);
+    res.setHeader(
+      "Content-Disposition",
+      `attachment; filename="procuracao-cliente-${client.id}.docx"`
+    );
+
+    res.send(docxBuffer);
   } catch (err) {
-    console.error(err);
+    console.error("💥 ERRO GERAL:", err);
     res.status(500).json({
       error: "Erro ao gerar procuração",
       message: err.message,
