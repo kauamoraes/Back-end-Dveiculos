@@ -18,38 +18,41 @@ router.get("/vehicle/:id/consignacao-docx", async (req, res) => {
       return res.status(400).json({ error: "ID inválido" });
     }
 
-    const vehicle = await prisma.vehicle.findUnique({
-      where: { id: vehicleId },
+    // 🔹 BUSCAR A VENDA PELO VEHICLE ID (CORRETO)
+    const sale = await prisma.sale.findFirst({
+      where: {
+        vehicleId: vehicleId,
+      },
       include: {
-        sale: {
-          include: {
-            client: true,
-            vehicle: true,
-          },
-        },
+        client: true,
+        vehicle: true,
       },
     });
 
-    if (!vehicle || !vehicle.sale) {
-      return res.status(403).json({
-        error: "Veículo não possui venda",
+    if (!sale) {
+      return res.status(404).json({
+        error: "Nenhuma venda encontrada para este veículo",
       });
     }
 
-    const sale = vehicle.sale;
     const client = sale.client;
+    const vehicle = sale.vehicle;
+
+    if (!client || !vehicle) {
+      return res.status(500).json({
+        error: "Venda inconsistente (cliente ou veículo ausente)",
+      });
+    }
 
     if (client.tipo?.trim().toUpperCase() !== "CONSIGNOU") {
       return res.status(403).json({
-        error: "Cliente não é consignação",
+        error: "Esta venda não é de consignação",
       });
     }
 
-    const soldVehicle = sale.vehicle;
-
     const templatePath = path.join(
       process.cwd(),
-      "src/templates/consignacao.docx",
+      "src/templates/consignacao.docx"
     );
 
     if (!fs.existsSync(templatePath)) {
@@ -87,27 +90,19 @@ router.get("/vehicle/:id/consignacao-docx", async (req, res) => {
         minute: "2-digit",
       }),
 
-      marca: soldVehicle.marca ?? "",
-      modelo: soldVehicle.modelo ?? "",
-      placa: soldVehicle.placa ?? "",
-      anoModelo: soldVehicle.anoModelo ?? "",
-      chassi: soldVehicle.chassi ?? "",
-      cor: soldVehicle.cor ?? "",
-      renavan: soldVehicle.renavan ?? "",
+      marca: vehicle.marca ?? "",
+      modelo: vehicle.modelo ?? "",
+      placa: vehicle.placa ?? "",
+      anoModelo: vehicle.anoModelo ?? "",
+      chassi: vehicle.chassi ?? "",
+      cor: vehicle.cor ?? "",
+      renavan: vehicle.renavan ?? "",
+      km: vehicle.km?.toString() ?? "",
       valorCompra: sale.valorVenda?.toFixed(2) ?? "",
-      km: soldVehicle.km?.toString() ?? "",
-      obs: sale.obs?.toString() ?? "",
+      obs: sale.obs ?? "",
     });
 
-    try {
-      doc.render();
-    } catch (e) {
-      console.error("❌ Erro ao renderizar consignação:", e);
-      return res.status(500).json({
-        error: "Erro ao processar template",
-        details: e.properties || e.message,
-      });
-    }
+    doc.render();
 
     const docxBuffer = doc.getZip().generate({
       type: "nodebuffer",
@@ -115,17 +110,17 @@ router.get("/vehicle/:id/consignacao-docx", async (req, res) => {
 
     res.setHeader(
       "Content-Type",
-      "application/vnd.openxmlformats-officedocument.wordprocessingml.document; charset=utf-8",
+      "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
     );
 
     res.setHeader(
       "Content-Disposition",
-      `attachment; filename="consignacao-veiculo-${vehicle.id}.docx"`,
+      `attachment; filename="consignacao-veiculo-${vehicle.id}.docx"`
     );
 
     res.send(docxBuffer);
   } catch (err) {
-    console.error("💥 ERRO GERAL:", err);
+    console.error("💥 ERRO:", err);
     res.status(500).json({
       error: "Erro ao gerar contrato de consignação",
       message: err.message,
