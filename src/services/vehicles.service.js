@@ -38,10 +38,7 @@ export const createVehicle = async (data) => {
     km,
     status: data.status,
     documentoTipo,
-    clientId:
-      clientId !== undefined && clientId !== null
-        ? Number(clientId)
-        : undefined,
+    clientId: Number(clientId),
   };
 
   console.debug("prisma.create payload:", payload);
