@@ -1,38 +1,25 @@
 import prisma from "../lib/prisma/prisma.js";
 
-export const createClient = async (data) => {
-  return prisma.client.create({
-    data: {
-      nome: data.nome,
-      cpf: data.cpf,
-      rg: data.rg,
-      email: data.email,
-      rua: data.rua, 
-      bairro: data.bairro,
-      cidade: data.cidade,
-      cep: data.cep,
-      celular: data.celular,
-      tipo: data.tipo,
-      createdAt: new Date(),
+export const listClients = async () => {
+  return prisma.client.findMany({
+    include: {
+      vehicles: true, // 🟢 isso garante que cada cliente traga seus veículos
+      sales: true, // opcional, se você quiser manter vendas
     },
   });
 };
 
-export const listClients = async () => {
-  return prisma.client.findMany({
-    include: {
-      sales: {
-        select: {
-          id: true
-        }
-      }
-    }
-  });
+export const createClient = async (data) => {
+  return prisma.client.create({ data });
 };
 
 export const getClientById = async (id) => {
   return prisma.client.findUnique({
     where: { id: Number(id) },
+    include: {
+      vehicles: true,
+      sales: true,
+    },
   });
 };
 
@@ -47,4 +34,18 @@ export const deleteClient = async (id) => {
   return prisma.client.delete({
     where: { id: Number(id) },
   });
+};
+
+export const listClientsWithVehicles = async () => {
+  const clients = await prisma.client.findMany({
+    include: {
+      vehicles: true, // pega todos os veículos ligados a este cliente
+    },
+  });
+
+  // adiciona temVeiculo baseado em vehicles.length
+  return clients.map(c => ({
+    ...c,
+    temVeiculo: c.vehicles.length > 0,
+  }));
 };

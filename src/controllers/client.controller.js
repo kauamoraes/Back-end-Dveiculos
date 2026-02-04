@@ -6,8 +6,23 @@ export const create = async (req, res) => {
 };
 
 export const list = async (req, res) => {
-  const clients = await clientService.listClients();
-  return res.json(clients);
+  try {
+    const clients = await clientService.listClientsWithVehicles();
+    res.json(clients);
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: "Erro ao listar clientes" });
+  }
+};
+
+export const listClientsWithVehicles = async (req, res) => {
+  try {
+    const clients = await clientService.listClientsWithVehicles();
+    res.json(clients);
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: "Erro ao listar clientes" });
+  }
 };
 
 export const getById = async (req, res) => {
@@ -16,10 +31,7 @@ export const getById = async (req, res) => {
 };
 
 export const update = async (req, res) => {
-  const client = await clientService.updateClient(
-    req.params.id,
-    req.body
-  );
+  const client = await clientService.updateClient(req.params.id, req.body);
   return res.json(client);
 };
 

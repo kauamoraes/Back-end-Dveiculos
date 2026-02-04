@@ -4,11 +4,55 @@ import {
   updateSale,
   cancelSale,
 } from "../services/sales.service.js";
+import prisma from "../lib/prisma/prisma.js";
+import { generateProcuracaoForSale } from "../services/documents.service.js";
 
 export const createSaleController = async (req, res) => {
   try {
     const sale = await createSale(req.body);
-    res.status(201).json(sale);
+
+    // gera procuração automaticamente e atualiza o registro da venda
+    try {
+      const client = await prisma.client.findUnique({
+        where: { id: sale.clientId },
+      });
+      const vehicle = await prisma.vehicle.findUnique({
+        where: { id: sale.vehicleId },
+      });
+
+      const { publicPath } = await generateProcuracaoForSale(
+        client,
+        vehicle,
+        sale,
+      );
+
+      const updated = await prisma.sale.update({
+        where: { id: sale.id },
+        data: { procuracaoPath: publicPath },
+      });
+
+      return res.status(201).json(updated);
+    } catch (docErr) {
+      // tentativa de compensação (não deixar venda sem procuração)
+      try {
+        await prisma.$transaction(async (tx) => {
+          await tx.sale.delete({ where: { id: sale.id } });
+          await tx.vehicle.update({
+            where: { id: sale.vehicleId },
+            data: { status: "disponivel" },
+          });
+        });
+      } catch (rbErr) {
+        console.error("Rollback falhou:", rbErr);
+      }
+
+      return res
+        .status(500)
+        .json({
+          message: "Venda revertida: erro ao gerar procuração",
+          details: docErr.message,
+        });
+    }
   } catch (error) {
     res.status(400).json({ message: error.message });
   }

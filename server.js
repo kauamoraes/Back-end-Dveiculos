@@ -1,5 +1,6 @@
 import express from "express";
 import cors from "cors";
+import path from "path";
 
 import vehicleRoutes from "./src/routes/vehicle.route.js";
 import clientRoutes from "./src/routes/client.route.js";
@@ -10,6 +11,7 @@ import documentProcuracao from "./src/routes/documentProcuracao.route.js";
 import documentConsignacao from "./src/routes/documentConsignacao.route.js";
 import documentFinanciamento from "./src/routes/documentFinanciamento.route.js";
 import documentCompra from "./src/routes/documentCompra.route.js";
+import authRoutes from "./src/routes/auth.routes.js";
 
 const app = express();
 const port = process.env.PORT || 3000;
@@ -17,6 +19,9 @@ const port = process.env.PORT || 3000;
 app.use(cors());
 
 app.use(express.json());
+
+// expose generated docs (e.g. temp/procuracoes) at /storage/*
+app.use("/storage", express.static(path.join(process.cwd(), "temp")));
 
 app.use("/client", clientRoutes);
 app.use("/vehicle", vehicleRoutes);
@@ -28,7 +33,7 @@ app.use("/", documentProcuracao);
 app.use("/", documentConsignacao);
 app.use("/", documentFinanciamento);
 app.use("/", documentCompra);
-
+app.use("/api/auth", authRoutes);
 
 app.listen(port, () => {
   console.log("API rodando na porta " + port);

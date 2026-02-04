@@ -10,6 +10,11 @@ datasource db {
   url      = env("DATABASE_URL")
 }
 
+model Auth {
+  id           Int      @id @default(autoincrement())
+  passwordHash String
+  createdAt    DateTime @default(now())
+}
 
 model Client {
   id        Int      @id @default(autoincrement())
@@ -65,5 +70,6 @@ model Sale {
   vehicleId           Int   @unique
   client              Client @relation(fields: [clientId], references: [id])
   vehicle             Vehicle @relation(fields: [vehicleId], references: [id])
+  procuracaoPath      String?
   createdAt           DateTime @default(now())
 }

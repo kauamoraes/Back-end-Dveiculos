@@ -10,6 +10,9 @@ const router = Router();
 /* ===============================
    PROCURAÇÃO WORD (DOCX)
 ================================ */
+/* ===============================
+   PROCURAÇÃO WORD (DOCX) - USA RELAÇÃO DIRETA CLIENTE-VEÍCULO
+================================ */
 router.get("/client/:id/procuracao-docx", async (req, res) => {
   try {
     const clientId = Number(req.params.id);
@@ -18,14 +21,11 @@ router.get("/client/:id/procuracao-docx", async (req, res) => {
       return res.status(400).json({ error: "ID inválido" });
     }
 
+    // BUSCA O CLIENTE COM SEUS VEÍCULOS (não precisa de sales)
     const client = await prisma.client.findUnique({
       where: { id: clientId },
       include: {
-        sales: {
-          include: {
-            vehicle: true,
-          },
-        },
+        vehicles: true, // Agora busca veículos diretamente
       },
     });
 
@@ -33,26 +33,15 @@ router.get("/client/:id/procuracao-docx", async (req, res) => {
       return res.status(404).json({ error: "Cliente não encontrado" });
     }
 
-    if (!client.sales || client.sales.length === 0) {
+    // Verifica se o cliente tem veículos atribuídos
+    if (!client.vehicles || client.vehicles.length === 0) {
       return res.status(403).json({
-        error: "Cliente não possui venda registrada",
+        error: "Cliente não possui veículo atribuído",
       });
     }
 
-    // Pega a venda mais recente
-    const sale = client.sales.sort(
-      (a, b) =>
-        new Date(b.dataVenda).getTime() -
-        new Date(a.dataVenda).getTime()
-    )[0];
-
-    if (!sale.vehicle) {
-      return res.status(400).json({
-        error: "Venda não possui veículo associado",
-      });
-    }
-
-    const vehicle = sale.vehicle;
+    // Pega o primeiro veículo do cliente (ou você pode escolher qual)
+    const vehicle = client.vehicles[0];
 
     const templatePath = path.join(
       process.cwd(),
@@ -119,7 +108,7 @@ router.get("/client/:id/procuracao-docx", async (req, res) => {
       type: "nodebuffer",
     });
 
-     res.setHeader(
+    res.setHeader(
       "Content-Type",
       "application/vnd.openxmlformats-officedocument.wordprocessingml.document; charset=utf-8",
     );

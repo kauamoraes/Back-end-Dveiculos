@@ -6,8 +6,9 @@ export const createVehicle = async (data) => {
     dataCompraRaw instanceof Date
       ? dataCompraRaw
       : dataCompraRaw
-      ? new Date(dataCompraRaw)
-      : undefined;
+        ? new Date(dataCompraRaw)
+        : undefined;
+
   if (dataCompraRaw && (!dataCompra || isNaN(dataCompra.getTime()))) {
     throw new Error("Invalid dataCompra date");
   }
@@ -22,41 +23,67 @@ export const createVehicle = async (data) => {
   const km =
     data.km !== undefined && data.km !== null ? Number(data.km) : undefined;
   const documentoTipo = data.documentoTipo || data.tipo_documento;
-  const clientId = data.clientId || data.client_id || data.client;
+  const clientId = data.clientId ?? data.client_id ?? data.client;
 
   const payload = {
-    dataCompra: dataCompra,
+    dataCompra,
     marca: data.marca,
     modelo: data.modelo,
     placa: data.placa,
-    anoModelo: anoModelo,
+    anoModelo,
     cor: data.cor,
     chassi: data.chassi,
-    renavan: renavan,
-    valorCompra: valorCompra,
-    km: km,
+    renavan,
+    valorCompra,
+    km,
     status: data.status,
-    documentoTipo: documentoTipo,
-    clientId: clientId !== undefined ? Number(clientId) : undefined,
+    documentoTipo,
+    clientId:
+      clientId !== undefined && clientId !== null
+        ? Number(clientId)
+        : undefined,
   };
 
   console.debug("prisma.create payload:", payload);
-  return prisma.vehicle.create({ data: payload });
+
+  return prisma.vehicle.create({
+    data: payload,
+    include: {
+      client: true, // 👈 já devolve cliente se criar com clientId
+    },
+  });
 };
 
 export const listVehicles = async () => {
   const vehicles = await prisma.vehicle.findMany({
     include: {
+      client: {
+        select: {
+          id: true,
+          nome: true,
+          tipo: true,
+        },
+      },
       sale: {
         include: {
-          client: true,
+          client: {
+            select: {
+              id: true,
+              nome: true,
+              tipo: true,
+            },
+          },
         },
       },
     },
   });
 
   return vehicles.map((v) => {
-    const tipoCliente = v.sale?.client?.tipo?.trim().toUpperCase() || null;
+    const clientDireto = v.client || null;
+    const clientVenda = v.sale?.client || null;
+    const client = clientDireto || clientVenda;
+
+    const tipoCliente = client?.tipo?.trim().toUpperCase() || null;
 
     let tipoDocumento = null;
 
@@ -77,19 +104,27 @@ export const listVehicles = async () => {
       dataCompra: v.dataCompra,
       placa: v.placa,
       status: v.status,
-
       tipoDocumento,
+
+      // 👇 ESSENCIAL PRO SEU FRONT FUNCIONAR
+      clientId: v.clientId ?? client?.id ?? null,
+      client: client ?? null,
     };
   });
 };
+
 export const getVehicleById = async (id) => {
   return prisma.vehicle.findUnique({
     where: { id: Number(id) },
+    include: {
+      client: true,
+    },
   });
 };
 
 export const updateVehicle = async (id, data) => {
   const updateData = {};
+
   if (data.dataCompra || data.data_da_compra) {
     const raw = data.dataCompra || data.data_da_compra;
     const parsed = raw instanceof Date ? raw : new Date(raw);
@@ -97,6 +132,7 @@ export const updateVehicle = async (id, data) => {
       throw new Error("Invalid dataCompra date");
     updateData.dataCompra = parsed;
   }
+
   if (data.marca) updateData.marca = data.marca;
   if (data.modelo) updateData.modelo = data.modelo;
   if (data.placa) updateData.placa = data.placa;
@@ -112,14 +148,23 @@ export const updateVehicle = async (id, data) => {
   if (data.status) updateData.status = data.status;
   if (data.documentoTipo || data.tipo_documento)
     updateData.documentoTipo = data.documentoTipo || data.tipo_documento;
-  if (data.clientId || data.client_id || data.client)
+
+  if (
+    data.clientId !== undefined ||
+    data.client_id !== undefined ||
+    data.client !== undefined
+  ) {
     updateData.clientId = Number(
-      data.clientId || data.client_id || data.client
+      data.clientId ?? data.client_id ?? data.client,
     );
+  }
 
   return prisma.vehicle.update({
     where: { id: Number(id) },
     data: updateData,
+    include: {
+      client: true,
+    },
   });
 };
 
