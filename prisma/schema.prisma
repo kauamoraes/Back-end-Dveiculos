@@ -69,6 +69,7 @@ model Sale {
   observacoes         String?
   clientId            Int
   vehicleId           Int   @unique
+  procuracaoPath      String?
   client              Client @relation(fields: [clientId], references: [id])
   vehicle             Vehicle @relation(fields: [vehicleId], references: [id])
   createdAt           DateTime @default(now())
