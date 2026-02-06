@@ -1,5 +1,4 @@
 import prisma from "../lib/prisma/prisma.js";
-import { generateProcuracaoForSale } from "./documents.service.js";
 
 // CREATE
 export const createSale = async (data) => {
@@ -8,6 +7,7 @@ export const createSale = async (data) => {
     if (rawVehicleId === undefined || rawVehicleId === null) {
       throw new Error("vehicleId is required");
     }
+
     const vehicleId = Number(rawVehicleId);
     if (Number.isNaN(vehicleId)) throw new Error("Invalid vehicleId");
 
@@ -25,7 +25,7 @@ export const createSale = async (data) => {
       .replace(/[\u0300-\u036f]/g, "")
       .toUpperCase();
 
-    const soldStatuses = ["vendido", "sold"];
+    const soldStatuses = ["VENDIDO", "SOLD"];
     if (soldStatuses.includes(statusNormalized)) {
       throw new Error("Veículo indisponível");
     }
@@ -44,7 +44,7 @@ export const createSale = async (data) => {
         diaVencimento: data.diaVencimento,
         observacoes: data.observacoes,
         clientId: data.clientId,
-        vehicleId: data.vehicleId,
+        vehicleId: vehicleId, // garante número
       },
     });
 
